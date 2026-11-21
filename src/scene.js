@@ -50,6 +50,33 @@ function inLake(x, y){
   return y > lakeTop(x) + 12 && y < shoreY(x) - 10 && !inIsland(x, y, 10) && !onPier(x, y);
 }
 
+function lakeBounds(x){
+  let lt = lakeTop(x) + 14;
+  const sb = shoreY(x) - 12;
+  for (const isl of ISLANDS){
+    if (x > isl.x - isl.rx - 6 && x < isl.x + isl.rx + 6){
+      lt = Math.max(lt, isl.y + isl.ry + 8);
+    }
+  }
+  return { lt, sb };
+}
+
+function outsidePier(x, y, pad){
+  const p = pierAt(x);
+  if (!p) return y;
+  const band = p.half + pad;
+  if (Math.abs(y - p.cy) >= band) return y;
+  const b = lakeBounds(x);
+  const up = p.cy - band - 2;
+  const down = p.cy + band + 2;
+  if (y < p.cy){
+    if (up >= b.lt) return up;
+    return down <= b.sb ? down : b.sb;
+  }
+  if (down <= b.sb) return down;
+  return up >= b.lt ? up : b.lt;
+}
+
 function buildBackground(){
   const bg = document.createElement('canvas');
   bg.width = VIEW.w;
@@ -300,14 +327,4 @@ function buildDynamic(){
   }
 
   return { trees, clouds, birds, boats, dashes, sparkles, foam, flies };
-}
-
-function drawCloud(c, x, y, s){
-  x = Math.round(x); y = Math.round(y);
-  ellipse(c, x, y + 6, s * 1.5, s * 0.42, PAL.haze);
-  ellipse(c, x, y, s * 1.15, s * 0.55, '#ffffff');
-  ellipse(c, x - s * 0.6, y + 2, s * 0.8, s * 0.42, '#ffffff');
-  ellipse(c, x + s * 0.7, y + 4, s * 0.9, s * 0.45, PAL.skyHz);
-  ellipse(c, x - s * 0.2, y - s * 0.35, s * 0.6, s * 0.35, '#ffffff');
-  px(c, x - Math.round(s * 0.5), y + Math.round(s * 0.5), Math.round(s * 1.4), 2, mix(PAL.skyHz, PAL.skyLow, 0.6));
 }

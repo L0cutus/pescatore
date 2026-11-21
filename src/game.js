@@ -25,7 +25,8 @@ function spawnFish(){
   let x = 0, y = 0, ok = false;
   for (let i = 0; i < 40 && !ok; i++){
     x = rng(24, VIEW.w - 24);
-    y = rng(lakeTop(x) + 18, shoreY(x) - 18);
+    const b = lakeBounds(x);
+    y = rng(b.lt + 4, b.sb - 4);
     ok = inLake(x, y);
   }
   if (!ok){
@@ -133,7 +134,8 @@ function rodTip(){
 
 function clampLake(x, y, depth){
   const tx = Math.max(20, Math.min(VIEW.w - 20, x));
-  let ty = Math.max(lakeTop(tx) + 14, Math.min(shoreY(tx) - 12, y));
+  const b = lakeBounds(tx);
+  let ty = Math.max(b.lt, Math.min(b.sb, y));
   if (depth > 0){
     const isl = inIsland(tx, ty, 16);
     if (isl){
@@ -141,7 +143,11 @@ function clampLake(x, y, depth){
       return clampLake(isl.x + Math.cos(a) * (isl.rx + 22), isl.y + Math.sin(a) * (isl.ry + 22), depth - 1);
     }
     const pr = pierAt(tx);
-    if (pr && Math.abs(ty - pr.cy) < pr.half + 6) return clampLake(tx, pr.cy - pr.half - 12, depth - 1);
+    if (pr && Math.abs(ty - pr.cy) < pr.half + 6){
+      ty = outsidePier(tx, ty, 6);
+      const b2 = lakeBounds(tx);
+      ty = Math.max(b2.lt, Math.min(b2.sb, ty));
+    }
   }
   return { x: tx, y: ty };
 }
@@ -209,8 +215,9 @@ function loseFish(reason){
   if (game.fish){
     game.fish.state = 'free';
     game.fish.ang = rng(0, 6.28);
-    game.fish.x = Math.max(24, Math.min(VIEW.w - 24, game.fish.x + rng(-60, 60)));
-    game.fish.y = Math.max(lakeTop(game.fish.x) + 18, Math.min(shoreY(game.fish.x) - 18, game.fish.y));
+    const p = clampLake(game.fish.x + rng(-60, 60), game.fish.y, 3);
+    game.fish.x = p.x;
+    game.fish.y = p.y;
   }
   game.fish = null;
   game.phase = 'idle';
@@ -306,7 +313,8 @@ function pointerToWorld(e){
 function randomLakePoint(){
   for (let i = 0; i < 30; i++){
     const x = rng(40, VIEW.w - 40);
-    const y = rng(lakeTop(x) + 22, shoreY(x) - 24);
+    const b = lakeBounds(x);
+    const y = rng(b.lt + 6, b.sb - 6);
     if (inLake(x, y)) return { x, y };
   }
   return { x: VIEW.w * 0.5, y: VIEW.h * 0.62 };
@@ -416,6 +424,12 @@ syncMusicBtn();
 function updateFish(f, dt){
   if (f.state === 'hooked' || f.state === 'bite') return;
 
+  if (game.phase !== 'waiting' && (f.state === 'approach' || f.state === 'inspect')){
+    f.state = 'free';
+    f.ang = rng(0, 6.28);
+    if (game.fish === f) game.fish = null;
+  }
+
   if (f.state === 'approach' && game.phase === 'waiting'){
     f.phase += dt;
     f.ang = Math.atan2(game.bob.y - f.y, game.bob.x - f.x);
@@ -439,6 +453,12 @@ function updateFish(f, dt){
   if (f.state === 'inspect'){
     f.phase += dt;
     if (f.phase > f.hold){
+      if (game.phase !== 'waiting'){
+        f.state = 'free';
+        f.ang = rng(0, 6.28);
+        if (game.fish === f) game.fish = null;
+        return;
+      }
       const roll = rnd();
       if (roll < 0.7){
         game.phase = 'bite';
@@ -493,16 +513,17 @@ function updateFish(f, dt){
     f.y = isl.y + Math.sin(a) * (isl.ry + 16);
     f.ang = a;
   }
-  const pr = pierAt(f.x);
-  if (pr && Math.abs(f.y - pr.cy) < pr.half + 6){
-    f.y = pr.cy - pr.half - 10;
-    f.ang = -f.ang;
-  }
 
-  const lt = lakeTop(f.x) + 14;
-  const sb = shoreY(f.x) - 14;
-  if (f.y < lt){ f.y = lt; f.ang = -f.ang; }
-  if (f.y > sb){ f.y = sb; f.ang = -f.ang; }
   if (f.x < 20){ f.x = 20; f.ang = Math.PI - f.ang; }
   if (f.x > VIEW.w - 20){ f.x = VIEW.w - 20; f.ang = Math.PI - f.ang; }
+
+  const b = lakeBounds(f.x);
+  if (f.y < b.lt){ f.y = b.lt; f.ang = -f.ang; }
+  if (f.y > b.sb){ f.y = b.sb; f.ang = -f.ang; }
+
+  const pr = pierAt(f.x);
+  if (pr && Math.abs(f.y - pr.cy) < pr.half + 6){
+    f.y = outsidePier(f.x, f.y, 6);
+    f.ang = -f.ang;
+  }
 }

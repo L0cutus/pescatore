@@ -19,9 +19,9 @@ function updateAmbient(dt){
       bo.dir = bo.x > isl.x ? 1 : -1;
       bo.x += bo.dir * 8;
     }
-    const pr = pierAt(bo.x);
-    if (pr && Math.abs(bo.y - pr.cy) < pr.half + 12) bo.y = pr.cy - pr.half - 16;
-    bo.y = Math.max(lakeTop(bo.x) + 18, Math.min(shoreY(bo.x) - 18, bo.y));
+    const bb = lakeBounds(bo.x);
+    bo.y = Math.max(bb.lt, Math.min(bb.sb, bo.y));
+    bo.y = outsidePier(bo.x, bo.y, 12);
     if (bo.wake <= 0){
       bo.wake = 1.6;
       addRipple(bo.x - bo.dir * 18, bo.y + 6, 18, PAL.shimmer);
@@ -157,19 +157,17 @@ function update(dt){
     game.ang += Math.sin(game.t * 3.4) * (game.burst ? 0.5 : 0.12) * dt;
     const tip = rodTip();
     game.fish.x = Math.max(16, Math.min(VIEW.w - 16, tip.x + Math.cos(game.ang) * game.dist));
-    game.fish.y = Math.max(
-      lakeTop(game.fish.x) + 12,
-      Math.min(shoreY(game.fish.x) - 12, tip.y + Math.sin(game.ang) * game.dist * 0.75)
-    );
+    const fb = lakeBounds(game.fish.x);
+    game.fish.y = Math.max(fb.lt, Math.min(fb.sb, tip.y + Math.sin(game.ang) * game.dist * 0.75));
     const isl = inIsland(game.fish.x, game.fish.y, 12);
     if (isl){
       const a = Math.atan2(game.fish.y - isl.y, game.fish.x - isl.x);
       game.fish.x = isl.x + Math.cos(a) * (isl.rx + 16);
       game.fish.y = isl.y + Math.sin(a) * (isl.ry + 16);
     }
-    const pr = pierAt(game.fish.x);
-    if (pr && Math.abs(game.fish.y - pr.cy) < pr.half + 6) game.fish.y = pr.cy - pr.half - 10;
-    game.fish.y = Math.max(lakeTop(game.fish.x) + 12, Math.min(shoreY(game.fish.x) - 12, game.fish.y));
+    const fb2 = lakeBounds(game.fish.x);
+    game.fish.y = Math.max(fb2.lt, Math.min(fb2.sb, game.fish.y));
+    game.fish.y = outsidePier(game.fish.x, game.fish.y, 6);
     game.bob.x = game.fish.x;
     game.bob.y = game.fish.y;
     if (game.holding && Math.random() < 0.2) addRipple(game.fish.x, game.fish.y, 20);
@@ -234,22 +232,25 @@ function syncHud(){
 }
 
 function drawSurface(){
-  for (const d of dyn.dashes){
-    const blink = Math.sin(game.t * 1.5 + d.phase);
-    ctx.globalAlpha = 0.22 + 0.22 * Math.max(0, blink);
-    px(ctx, Math.round(d.x), d.y, d.len, 2, PAL.shimmer);
-  }
-  for (const s of dyn.sparkles){
-    const blink = Math.sin(s.phase);
-    if (blink < 0.2) continue;
-    ctx.globalAlpha = 0.35 + 0.45 * blink;
-    px(ctx, Math.round(s.x), s.y, s.len, 2, PAL.sparkle);
-  }
-  for (const fd of dyn.foam){
-    const blink = Math.sin(game.t * 2.4 + fd.phase);
-    ctx.globalAlpha = 0.3 + 0.4 * Math.max(0, blink);
-    px(ctx, fd.x, fd.y, fd.len, 2, PAL.foam);
-  }
+  const h = Math.max(1, Math.round(SC));
+  deviceDraw(ctx, g => {
+    for (const d of dyn.dashes){
+      const blink = Math.sin(game.t * 1.5 + d.phase);
+      g.globalAlpha = 0.22 + 0.22 * Math.max(0, blink);
+      pxD(g, Math.round(d.x * SC), Math.round(d.y * SC), Math.round(d.len * SC), h, PAL.shimmer);
+    }
+    for (const s of dyn.sparkles){
+      const blink = Math.sin(s.phase);
+      if (blink < 0.2) continue;
+      g.globalAlpha = 0.35 + 0.45 * blink;
+      pxD(g, Math.round(s.x * SC), Math.round(s.y * SC), Math.round(s.len * SC), h, PAL.sparkle);
+    }
+    for (const fd of dyn.foam){
+      const blink = Math.sin(game.t * 2.4 + fd.phase);
+      g.globalAlpha = 0.3 + 0.4 * Math.max(0, blink);
+      pxD(g, Math.round(fd.x * SC), Math.round(fd.y * SC), Math.round(fd.len * SC), h, PAL.foam);
+    }
+  });
   ctx.globalAlpha = 1;
 }
 
@@ -268,12 +269,12 @@ function drawBoats(){
     const bob = Math.sin(game.t * 1.6 + bo.x * 0.025) * 2.4;
     const y = Math.round(bo.y + bob);
     const left = Math.round(bo.x - spriteW(bo.sprite) / 2);
-    ellipse(ctx, bo.x, y + spriteH(bo.sprite) / 2 + 4, spriteW(bo.sprite) * 0.6, 4, PAL.shadowSoft);
+    blitShadow(ctx, bo.x, y + spriteH(bo.sprite) / 2 + 4, spriteW(bo.sprite) * 0.6, 4, PAL.shadowSoft);
     drawSpriteCached(ctx, bo.sprite, left, Math.round(y - spriteH(bo.sprite) / 2), bo.dir < 0);
     if (bo.sprite === BOAT_ROWER){
       const swing = Math.sin(bo.oar) * 6;
       const ox = bo.x + (bo.dir < 0 ? -14 : 14);
-      linePixels(ctx, ox, y - 2, ox + bo.dir * 18, y + 8 + swing, PAL.woodHi, 2);
+      deviceDraw(ctx, g => smoothLine(g, ox, y - 2, ox + bo.dir * 18, y + 8 + swing, PAL.woodHi, 2));
       if (Math.abs(swing) > 5 && Math.random() < 0.12) addRipple(ox + bo.dir * 18, y + 8, 14, PAL.foam);
     }
   }
@@ -283,23 +284,28 @@ function drawRipples(){
   for (const r of ripples){
     ctx.globalAlpha = Math.max(0, r.life) * 0.55;
     const baked = ringCanvas(r.col, r.r);
-    ctx.drawImage(baked, Math.round(r.x - baked.ax), Math.round(r.y - baked.ay));
+    blitHi(ctx, baked, r.x - baked.ax, r.y - baked.ay);
   }
   ctx.globalAlpha = 1;
 }
 
 function drawSplashes(){
-  for (const s of splashes){
-    ctx.globalAlpha = Math.max(0, 1 - s.t / s.life);
-    px(ctx, Math.round(s.x), Math.round(s.y), 2, 2, PAL.foam);
-  }
+  const s = Math.max(2, Math.round(SC));
+  deviceDraw(ctx, g => {
+    for (const sp of splashes){
+      g.globalAlpha = Math.max(0, 1 - sp.t / sp.life);
+      pxD(g, Math.round(sp.x * SC), Math.round(sp.y * SC), s, s, PAL.foam);
+    }
+  });
   ctx.globalAlpha = 1;
 }
 
 function drawFishing(){
   const tip = rodTip();
-  linePixels(ctx, ROD_BASE.x, ROD_BASE.y, tip.x, tip.y, PAL.woodHi, 2);
-  linePixels(ctx, ROD_BASE.x + 2, ROD_BASE.y + 2, tip.x + 2, tip.y + 2, PAL.woodDark, 2);
+  deviceDraw(ctx, g => {
+    smoothLine(g, ROD_BASE.x, ROD_BASE.y, tip.x, tip.y, PAL.woodHi, 2);
+    smoothLine(g, ROD_BASE.x + 2, ROD_BASE.y + 2, tip.x + 2, tip.y + 2, PAL.woodDark, 2);
+  });
   px(ctx, ROD_BASE.x - 2, ROD_BASE.y - 2, 4, 4, PAL.woodShade);
 
   const active = game.phase === 'casting' || game.phase === 'waiting' || game.phase === 'bite' || game.phase === 'reel';
@@ -309,37 +315,39 @@ function drawFishing(){
     const dx = bx - tip.x;
     const dy = by - tip.y;
     const sag = (game.phase === 'reel' ? 8 - (game.tension / 100) * 8 : 20) + Math.hypot(dx, dy) * 0.05;
-    bezierPixels(ctx, tip.x, tip.y, tip.x + dx / 2, tip.y + dy / 2 + sag, bx, by, PAL.lineDark, 1);
-    bezierPixels(ctx, tip.x, tip.y - 2, tip.x + dx / 2, tip.y + dy / 2 + sag - 2, bx, by - 2, PAL.line, 1);
+    deviceDraw(ctx, g => {
+      smoothBezier(g, tip.x, tip.y, tip.x + dx / 2, tip.y + dy / 2 + sag, bx, by, PAL.lineDark, 1);
+      smoothBezier(g, tip.x, tip.y - 2, tip.x + dx / 2, tip.y + dy / 2 + sag - 2, bx, by - 2, PAL.line, 1);
+    });
   }
 
-  ellipse(ctx, FISHER.x, FISHER.y + 2, 12, 4, PAL.shadowSoft);
+  blitShadow(ctx, FISHER.x, FISHER.y + 2, 12, 4, PAL.shadowSoft);
   drawSpriteCached(ctx, FISHERMAN, Math.round(FISHER.x - 12), Math.round(FISHER.y - 30), false);
   drawSpriteCached(ctx, FISHERMAN_DETAIL, Math.round(FISHER.x - 12), Math.round(FISHER.y - 30), false);
 
   if (active){
     const bx = Math.round(game.bob.x);
     const by = Math.round(game.bob.y + game.bob.dip);
-    ellipse(ctx, bx, by + 6, 8, 3, PAL.shadowSoft);
-    px(ctx, bx - 2, by - 2, 4, 4, PAL.bobWhite);
-    px(ctx, bx - 2, by + 2, 4, 4, PAL.bobRed);
-    px(ctx, bx, by - 4, 2, 2, PAL.bobRed);
-    px(ctx, bx - 2, by - 2, 2, 2, PAL.sparkle);
+    blitShadow(ctx, bx, by + 6, 8, 3, PAL.shadowSoft);
+    blitHi(ctx, bobCanvas(), bx - 4, by - 4);
   }
 
   if (game.landedFx){
     const t = game.landedFx.t;
     const fx = Math.round(game.landedFx.x + t * 14);
     const fy = Math.round(game.landedFx.y - Math.sin(Math.min(1, t / 0.45) * Math.PI) * 14);
-    drawFishBody(ctx, fx, fy, game.landedFx.sp.rx, game.landedFx.sp.ry, 1, game.landedFx.sp.col, 1);
-    ellipse(ctx, fx, fy + game.landedFx.sp.ry + 4, game.landedFx.sp.rx * 0.8, 3, PAL.shadowSoft);
+    const baked = fishBodyCanvas(game.landedFx.sp, 1, false);
+    blitHi(ctx, baked, fx - baked.ax, fy - baked.ay);
+    blitShadow(ctx, fx, fy + game.landedFx.sp.ry + 4, game.landedFx.sp.rx * 0.8, 3, PAL.shadowSoft);
   }
 
   if (game.phase === 'bite'){
     const bx = Math.round(game.bob.x);
     const by = Math.round(game.bob.y);
-    px(ctx, bx + 12, by - 22, 4, 12, PAL.hudGold);
-    px(ctx, bx + 12, by - 6, 4, 4, PAL.hudGold);
+    deviceDraw(ctx, g => {
+      smoothLine(g, bx + 12, by - 22, bx + 12, by - 10, PAL.hudGold, 2);
+      smoothEllipse(g, bx + 13, by - 6, 2.6, 2.6, PAL.hudGold);
+    });
   }
 }
 
@@ -372,7 +380,7 @@ function render(){
   ctx.globalAlpha = 0.09;
   for (const cl of dyn.clouds){
     const baked = cloudShadowCanvas(cl.s * 20);
-    ctx.drawImage(baked, Math.round(cl.x - baked.ax), Math.round(cl.shadowY - baked.ay));
+    blitHi(ctx, baked, cl.x - baked.ax, cl.shadowY - baked.ay);
   }
   ctx.globalAlpha = 1;
 
@@ -386,7 +394,7 @@ function render(){
   for (const cl of dyn.clouds){
     const s = Math.round(cl.s * 20);
     const baked = cloudCanvas(s);
-    ctx.drawImage(baked, Math.round(cl.x - baked.ax), Math.round(cl.y - baked.ay));
+    blitHi(ctx, baked, cl.x - baked.ax, cl.y - baked.ay);
   }
   for (const b of dyn.birds){
     drawSpriteCached(ctx, BIRD, Math.round(b.x), Math.round(b.y) + (Math.sin(b.flap) > 0 ? 0 : 2), false);

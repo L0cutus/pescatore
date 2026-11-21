@@ -1,6 +1,24 @@
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
-ctx.imageSmoothingEnabled = false;
+
+const PIXEL_CAP = VIEW.w * VIEW.h * 4;
+let SC = 1;
+let scaleReady = false;
+
+function applyScale(){
+  const dpr = (typeof window !== 'undefined' && window.devicePixelRatio) || 1;
+  const next = Math.max(1, Math.min(Math.round(dpr), 2, Math.sqrt(PIXEL_CAP / (VIEW.w * VIEW.h))));
+  if (scaleReady && next === SC) return;
+  SC = next;
+  scaleReady = true;
+  canvas.width = VIEW.w * SC;
+  canvas.height = VIEW.h * SC;
+  if (ctx.setTransform) ctx.setTransform(SC, 0, 0, SC, 0, 0);
+  ctx.imageSmoothingEnabled = false;
+  bakeCache.clear();
+}
+applyScale();
+window.addEventListener('resize', applyScale);
 
 const fsBtn = document.getElementById('fs');
 const fsZone = document.getElementById('fsZone');
