@@ -87,7 +87,9 @@ canvas{
 .track b{display:block;height:100%;width:0;background:#3f8ea8}
 #msg{flex:1;color:var(--gold);min-width:120px}
 #msg.hot{color:#ff9a7a}
-.log{flex-wrap:wrap;gap:10px;font-size:11px;color:var(--dim);background:var(--panel);border:1px solid var(--edge);padding:5px 9px}
+/* display:flex: senza era un blocco e i gap non si applicavano → le voci uscivano attaccate
+   («10ptTrota»). Le portrait media queries sopra rimettono display:none. */
+.log{display:flex;flex-wrap:wrap;gap:10px;font-size:11px;color:var(--dim);background:var(--panel);border:1px solid var(--edge);padding:5px 9px}
 .log span b{color:var(--ink);font-weight:600}
 .hint{color:var(--dim);font-size:11px;text-align:center;background:var(--panel);border:1px solid var(--edge);padding:5px 9px}
 .hint b{color:var(--gold)}

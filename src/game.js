@@ -191,7 +191,8 @@ function hookIt(){
 
 function landIt(){
   const sp = game.fish.sp;
-  const pts = Math.round(sp.pts * (1 + game.combo * 0.15));
+  const comboMul = game.combo;          // il bonus usa il combo PRIMA dell'incremento
+  const pts = Math.round(sp.pts * (1 + comboMul * 0.15));
   game.score += pts;
   game.caught++;
   game.combo++;
@@ -201,12 +202,15 @@ function landIt(){
     saveBest(game.best);
   }
   game.landedFx = { x: FISHER.x - 18, y: FISHER.y + 6, sp, t: 0 };
-  game.box = { sp, pts, t: 0 };   // passo 4: si apre al centro, il timer si congela
+  // passo 4: si apre al centro, il timer si congela. base/bonus dicono come si è fatto pts, così
+  // il "+N" del box non contraddice i pt della specie nella riga in basso
+  game.box = { sp, pts, base: sp.pts, bonus: pts - sp.pts, combo: comboMul, t: 0 };
   addSplash(FISHER.x - 12, FISHER.y + 6, 10);
   game.phase = 'landed';
   game.fish.state = 'landed';
   clearHolds();
-  say(sp.name + ' +' + pts + (game.combo > 1 ? ' (combo x' + game.combo + ')' : ''));
+  const bonus = pts - sp.pts;
+  say(sp.name + ' +' + pts + (bonus > 0 ? ' · base ' + sp.pts + ' · bonus +' + bonus : ''));
   chord(sp.id === 'storione' ? [523, 659, 784, 988] : [440, 587, 740], 70, 0.14);
   musicDuck(1);
   buzz([45, 60, 45]);
