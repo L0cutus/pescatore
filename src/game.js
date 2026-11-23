@@ -3,12 +3,13 @@ const FISHER = { x: PIER.bx - 4, y: PIER.by - 2 };
 const ROD_BASE = { x: FISHER.x + 6, y: FISHER.y - 12 };
 
 const SPECIES = [
-  { id: 'carpa', name: 'Carpa', pts: 10, rx: 12, ry: 4.8, col: '#93704a', struggle: 0.55, w: 34 },
-  { id: 'persico', name: 'Persico', pts: 20, rx: 10, ry: 4.4, col: '#3f7f62', struggle: 0.8, w: 26 },
-  { id: 'trota', name: 'Trota', pts: 35, rx: 14, ry: 5, col: '#7b8b96', struggle: 1.15, w: 18 },
-  { id: 'storione', name: 'Storione', pts: 60, rx: 22, ry: 6.8, col: '#4d5b66', struggle: 1.35, w: 12 },
-  { id: 'tinca', name: 'Tinca', pts: 15, rx: 10, ry: 5.2, col: '#6f7f4a', struggle: 0.45, w: 14 },
-  { id: 'stivale', name: 'Stivale', pts: 5, rx: 8, ry: 8, col: '#5a4636', struggle: 0.2, w: 6 }
+  // minW/maxW in kg: l'intervallo reale della specie. Lo stivale non ha peso (taglia scherzosa).
+  { id: 'carpa', name: 'Carpa', pts: 10, rx: 12, ry: 4.8, col: '#93704a', struggle: 0.55, w: 34, minW: 0.8, maxW: 6 },
+  { id: 'persico', name: 'Persico', pts: 20, rx: 10, ry: 4.4, col: '#3f7f62', struggle: 0.8, w: 26, minW: 0.1, maxW: 1.5 },
+  { id: 'trota', name: 'Trota', pts: 35, rx: 14, ry: 5, col: '#7b8b96', struggle: 1.15, w: 18, minW: 0.3, maxW: 3 },
+  { id: 'storione', name: 'Storione', pts: 60, rx: 22, ry: 6.8, col: '#4d5b66', struggle: 1.35, w: 12, minW: 3, maxW: 25 },
+  { id: 'tinca', name: 'Tinca', pts: 15, rx: 10, ry: 5.2, col: '#6f7f4a', struggle: 0.45, w: 14, minW: 0.3, maxW: 2.5 },
+  { id: 'stivale', name: 'Stivale', pts: 5, rx: 8, ry: 8, col: '#5a4636', struggle: 0.2, w: 6, taglia: 42 }
 ];
 const TOTAL_W = SPECIES.reduce((s, sp) => s + sp.w, 0);
 
@@ -57,6 +58,68 @@ function saveBest(v){
   try { localStorage.setItem('pescatore-best', String(v)); } catch (e){}
 }
 
+// Generatore separato dal rnd() del gioco: i pesi devono essere casuali ma non devono
+// consumare il flusso del gioco (altrimenti la telecamera/le vesciche/i pesi smettevano
+// di riallinearsi tra le copie nel confronto seq.js). Seed da Math.random; le prove in
+// Chrome possono forzare il seed via window.__albumSeed.
+let albumRngState = null;
+function albumRng(){
+  if (albumRngState === null){
+    albumRngState =
+      (typeof window !== 'undefined' && Number.isFinite(window.__albumSeed))
+        ? Math.floor(window.__albumSeed) >>> 0
+        : (Math.random() * 0x100000000) >>> 0;
+    if (albumRngState === 0) albumRngState = 123456789;
+  }
+  albumRngState = (albumRngState * 1664525 + 1013904223) >>> 0;
+  return albumRngState / 0x100000000;
+}
+// Distribuzione triangolare (media di due unifrome: moda a metà dell'intervallo): favorisce
+// i pesci medi; i giganti (e i microscopici) sono rari.
+function rollWeight(sp){
+  const u = (albumRng() + albumRng()) / 2;
+  const w = sp.minW + (sp.maxW - sp.minW) * u;
+  return Math.round(w * 100) / 100;
+}
+function fmtKg(w){
+  return w.toFixed(2).replace('.', ',') + ' kg';
+}
+function todayISO(){
+  try { return new Date().toISOString().slice(0, 10); } catch (e){ return ''; }
+}
+function fmtDate(iso){
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso || ''));
+  if (!m) return String(iso || '');
+  return m[3] + '/' + m[2] + '/' + m[1];
+}
+
+// Album delle catture: conteggi e record di peso per specie. Persistito in localStorage con
+// try/catch ovunque: se non funziona (navigazione privata) l'album vale solo per la sessione.
+// Chiave nuova e versionata; 'pescatore-best' resta com'è.
+const ALBUM_KEY = 'pescatore-album-v1';
+function defaultAlbumData(){ return { counts: {}, records: {} }; }
+function loadAlbum(){
+  try {
+    const raw = localStorage.getItem(ALBUM_KEY);
+    if (!raw) return defaultAlbumData();
+    const v = JSON.parse(raw);
+    if (!v || typeof v !== 'object') return defaultAlbumData();
+    const out = defaultAlbumData();
+    for (const sp of SPECIES){
+      const n = v.counts && v.counts[sp.id];
+      if (Number.isFinite(n) && n > 0) out.counts[sp.id] = Math.floor(n);
+      const r = v.records && v.records[sp.id];
+      if (r && Number.isFinite(r.w) && r.w > 0){
+        out.records[sp.id] = { w: r.w, date: typeof r.date === 'string' ? r.date : '' };
+      }
+    }
+    return out;
+  } catch (e){ return defaultAlbumData(); }
+}
+function saveAlbum(){
+  try { localStorage.setItem(ALBUM_KEY, JSON.stringify(game.albumData)); } catch (e){}
+}
+
 const game = {
   t: 0,
   phase: 'idle',
@@ -82,6 +145,9 @@ const game = {
   rodSwing: 0,
   landedFx: null,
   box: null,        // passo 4: box "pesce catturato" aperto a schermo (null = chiuso)
+  album: null,      // album delle catture aperto a schermo (null = chiuso)
+  roundBest: null,  // più grosso pesato del turno: { sp, weight, pts } (null = nessuno)
+  albumData: loadAlbum(),
   lastRippleT: -1,
   duckT: 0,
   msg: '',
@@ -192,7 +258,14 @@ function hookIt(){
 function landIt(){
   const sp = game.fish.sp;
   const comboMul = game.combo;          // il bonus usa il combo PRIMA dell'incremento
-  const pts = Math.round(sp.pts * (1 + comboMul * 0.15));
+  // peso casuale della specie (stivale: no peso, taglia scherzosa) — generatore separato,
+  // non consuma il rnd() del gioco
+  const weight = sp.minW !== undefined ? rollWeight(sp) : null;
+  const factor = weight === null ? 1
+    : 0.7 + 1.1 * ((weight - sp.minW) / (sp.maxW - sp.minW));
+  // punti base della specie × fattore peso, poi bonus combo come oggi
+  const base = Math.round(sp.pts * factor);
+  const pts = Math.round(base * (1 + comboMul * 0.15));
   game.score += pts;
   game.caught++;
   game.combo++;
@@ -201,16 +274,33 @@ function landIt(){
     game.best = game.score;
     saveBest(game.best);
   }
+  // album: conteggio sempre, record solo se la specie ne ha uno (lo stivale no)
+  let isRecord = false;
+  if (weight !== null){
+    const rec = game.albumData.records[sp.id];
+    if (!rec || weight > rec.w){
+      isRecord = true;
+      game.albumData.records[sp.id] = { w: weight, date: todayISO() };
+    }
+    if (!game.roundBest || weight > game.roundBest.weight){
+      game.roundBest = { sp, weight, pts };
+    }
+  }
+  game.albumData.counts[sp.id] = (game.albumData.counts[sp.id] || 0) + 1;
+  saveAlbum();
   game.landedFx = { x: FISHER.x - 18, y: FISHER.y + 6, sp, t: 0 };
-  // passo 4: si apre al centro, il timer si congela. base/bonus dicono come si è fatto pts, così
-  // il "+N" del box non contraddice i pt della specie nella riga in basso
-  game.box = { sp, pts, base: sp.pts, bonus: pts - sp.pts, combo: comboMul, t: 0 };
+  // passo 4: si apre al centro, il timer si congela. base/factor/bonus dicono come si è fatto
+  // pts, così il "+N" del box non contraddice i pt della specie nella riga in basso
+  game.box = {
+    sp, pts, base, factor, weight, taglia: sp.taglia || null, bonus: pts - base,
+    combo: comboMul, isRecord, t: 0
+  };
   addSplash(FISHER.x - 12, FISHER.y + 6, 10);
   game.phase = 'landed';
   game.fish.state = 'landed';
   clearHolds();
-  const bonus = pts - sp.pts;
-  say(sp.name + ' +' + pts + (bonus > 0 ? ' · base ' + sp.pts + ' · bonus +' + bonus : ''));
+  const weightTxt = weight !== null ? ' · ' + fmtKg(weight) : ' · taglia ' + sp.taglia;
+  say(sp.name + weightTxt + ' +' + pts + (game.box.bonus > 0 ? ' · base ' + base + ' · bonus +' + game.box.bonus : ''));
   chord(sp.id === 'storione' ? [523, 659, 784, 988] : [440, 587, 740], 70, 0.14);
   musicDuck(1);
   buzz([45, 60, 45]);
@@ -248,6 +338,8 @@ const btnCast = document.getElementById('btnCast');
 const btnHold = document.getElementById('btnHold');
 const btnRestart = document.getElementById('btnRestart');
 const btnMusic = document.getElementById('btnMusic');
+const btnAlbum = document.getElementById('btnAlbum');
+const btnAlbumDesk = document.getElementById('btnAlbumDesk');
 
 function buzz(pattern){
   if (typeof navigator !== 'undefined' && navigator.vibrate){
@@ -270,6 +362,20 @@ function say(text){
   elMsg.className = /rotta|scappa|mangiato|abbocca/.test(text) ? 'hot' : '';
 }
 
+// l'album è disegnabile solo con un DOM vero: negli stub Node si resta tranquilli
+function albumDomReady(){
+  if (typeof document === 'undefined' || !document.getElementById) return false;
+  const el = document.getElementById('album');
+  return !!el && !!el.classList && typeof el.appendChild === 'function';
+}
+function toggleAlbum(){
+  if (game.album){ game.album = null; return; }
+  if (!albumDomReady()) return;
+  if (game.box) game.box = null;   // l'album è un modale: il box si disarma
+  game.album = { t: 0 };
+  say('album delle catture');
+}
+
 function restart(){
   game.phase = 'idle';
   game.score = 0;
@@ -281,6 +387,8 @@ function restart(){
   game.tension = 0;
   game.landedFx = null;
   game.box = null;
+  game.album = null;
+  game.roundBest = null;
   game.dist = 0;
   game.dist0 = 1;
   game.ang = 0;
@@ -339,6 +447,8 @@ function randomLakePoint(){
 
 function press(key, randomTarget){
   if (audioOn){ getCtx(); startMusic(); }
+  // album aperto: chiude senza lanciare
+  if (game.album){ game.album = null; return; }
   if (game.phase === 'over') { restart(); return; }
   // passo 4: il primo tap/spazio chiude il box della cattura e NON lancia
   if (game.box){ game.box = null; return; }
@@ -374,12 +484,14 @@ window.addEventListener('keydown', e => {
   if (e.code === 'Space'){
     e.preventDefault();
     if (!e.repeat){
+      const albumOpen = !!game.album;
       press('space');
-      holdOn('space');
+      if (!albumOpen) holdOn('space');
     }
   }
   if (e.key === 'r' || e.key === 'R'){ if (!e.repeat) restart(); }
   if (e.key === 'm' || e.key === 'M'){ if (!e.repeat) toggleAudio(); }
+  if (e.key === 'a' || e.key === 'A'){ if (!e.repeat) toggleAlbum(); }
 });
 window.addEventListener('keyup', e => { if (e.code === 'Space') holdOff('space'); });
 
@@ -410,10 +522,15 @@ noLongPressMenu(btnCast);
 noLongPressMenu(btnHold);
 noLongPressMenu(btnRestart);
 noLongPressMenu(btnMusic);
+noLongPressMenu(btnAlbum);
+noLongPressMenu(btnAlbumDesk);
 noLongPressMenu(document.getElementById('fs'));
 noLongPressMenu(document.getElementById('fsZone'));
 if (btnRestart) btnRestart.addEventListener('pointerdown', e => { stopBubble(e); restart(); });
 if (btnMusic) btnMusic.addEventListener('pointerdown', e => { stopBubble(e); toggleAudio(); });
+for (const b of [btnAlbum, btnAlbumDesk]){
+  if (b) b.addEventListener('pointerdown', e => { stopBubble(e); toggleAlbum(); });
+}
 
 function buttonKey(el, down, up){
   if (!el) return;
@@ -436,6 +553,8 @@ buttonKey(btnCast, () => press('kb-cast', true));
 buttonKey(btnHold, () => { press('kb-hold', true); if (game.phase === 'reel') holdOn('kb-hold'); }, () => holdOff('kb-hold'));
 buttonKey(btnRestart, restart);
 buttonKey(btnMusic, toggleAudio);
+buttonKey(btnAlbum, toggleAlbum);
+buttonKey(btnAlbumDesk, toggleAlbum);
 
 function syncMusicBtn(){ if (btnMusic) btnMusic.textContent = audioOn ? 'musica on' : 'musica off'; }
 syncMusicBtn();

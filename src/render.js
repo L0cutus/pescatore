@@ -64,8 +64,8 @@ function update(dt){
     if (game.box.t > 2.5) game.box = null;
   }
 
-  // con il box aperto il tempo della giornata e' congelato, riparte dallo stesso valore
-  if (game.phase !== 'over' && !game.box){
+  // con il box o con l'album aperti il tempo della giornata e' congelato, riparte dallo stesso valore
+  if (game.phase !== 'over' && !game.box && !game.album){
     game.left -= dt;
     if (game.left <= 0){
       game.left = 0;
@@ -75,7 +75,7 @@ function update(dt){
       for (const f of fish){
         if (f.state !== 'free'){ f.state = 'free'; f.ang = rng(0, 6.28); }
       }
-      say('fine giornata: ' + game.score + ' punti, ' + game.caught + ' pescato - premi r');
+      say('fine giornata: ' + game.score + ' punti, ' + game.caught + ' pescato');
       chord([392, 523, 659], 120, 0.2);
       musicModeSet('rest');
     }
@@ -469,19 +469,24 @@ function render(){
 
   if (game.phase === 'over'){
     ctx.globalAlpha = 0.75;
-    px(ctx, 240, 216, 480, 108, PAL.hudPanel);
+    px(ctx, 240, 196, 480, 168, PAL.hudPanel);
     ctx.globalAlpha = 1;
-    px(ctx, 240, 216, 480, 2, PAL.hudGold);
-    px(ctx, 240, 322, 480, 2, PAL.hudGold);
+    px(ctx, 240, 196, 480, 2, PAL.hudGold);
+    px(ctx, 240, 362, 480, 2, PAL.hudGold);
     ctx.fillStyle = PAL.hudGold;
     ctx.font = '22px ui-monospace, monospace';
-    ctx.fillText('FINE GIORNATA', 264, 248);
+    ctx.fillText('FINE GIORNATA', 264, 228);
     ctx.fillStyle = PAL.hudInk;
     ctx.font = '20px ui-monospace, monospace';
-    ctx.fillText('punti ' + game.score + '   pescato ' + game.caught, 264, 276);
+    ctx.fillText('punti ' + game.score + '   pescato ' + game.caught, 264, 256);
     ctx.fillStyle = PAL.hudDim;
     ctx.font = '18px ui-monospace, monospace';
-    ctx.fillText('record ' + game.best + '   [r] nuova giornata', 264, 302);
+    ctx.fillText('record ' + game.best + '   [r] nuova giornata', 264, 286);
+    if (game.roundBest){
+      ctx.fillStyle = PAL.hudInk;
+      ctx.font = '18px ui-monospace, monospace';
+      ctx.fillText('più grosso: ' + game.roundBest.sp.name + ' · ' + fmtKg(game.roundBest.weight), 264, 330);
+    }
   }
 }
 

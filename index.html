@@ -33,7 +33,7 @@
       <div class="hud-bottom">
         <div class="log" id="log"></div>
         <div class="hint">
-          <span><b>tap</b>: lancio e abboccata · <b>tieni premuto</b>: recupera · <b>r</b> nuovo turno · <b>m</b> musica</span>
+          <span><b>tap</b>: lancio · <b>tieni</b>: recupera · <b>r</b>: turno · <b>m</b>: musica · <b>a</b>: album</span>
         </div>
       </div>
     </div>
@@ -43,6 +43,7 @@
         <button id="fsZone" class="mbtn mini" type="button">schermo intero</button>
         <button id="btnRestart" class="mbtn mini" type="button">nuovo turno</button>
         <button id="btnMusic" class="mbtn mini" type="button">musica</button>
+        <button id="btnAlbum" class="mbtn mini" type="button">album</button>
       </div>
       <div class="mb-row">
         <button id="btnCast" class="mbtn" type="button">lancia</button>
@@ -55,12 +56,28 @@
       <canvas id="catchart"></canvas>
       <div class="catch-name" id="catchname"></div>
       <div class="catch-pts" id="catchpts"></div>
+      <div class="catch-record" id="catchrecord">nuovo record!</div>
       <div class="catch-note" id="catchnote"></div>
+    </div>
+
+    <!-- pannello album: tap ovunque lo chiude (pointer-events:auto, il tap non raggiunge il canvas) -->
+    <div class="album" id="album" aria-hidden="true">
+      <div class="album-panel">
+        <div class="album-head">
+          <span class="album-title">album · catture</span>
+          <button id="albumClose" class="album-x" type="button">chiudi</button>
+        </div>
+        <div class="album-grid" id="albumGrid"></div>
+        <div class="album-foot">tasto «a» o tap per chiudere</div>
+      </div>
     </div>
 
     <div class="bite-cue" id="bitecue">abbocca! tap</div>
     <div class="rotate">ruota il telefono in orizzontale</div>
-    <button id="fs" class="fs" type="button">schermo intero</button>
+    <div class="desk-btns">
+      <button id="btnAlbumDesk" class="fs" type="button">album</button>
+      <button id="fs" class="fs" type="button">schermo intero</button>
+    </div>
   </div>
 </div>
 
@@ -71,6 +88,8 @@
 <script src="src/audio.js"></script>
 <script src="src/game.js"></script>
 <script src="src/render.js"></script>
+<script src="src/fishart.js"></script>
 <script src="src/catchbox.js"></script>
+<script src="src/album.js"></script>
 </body>
 </html>
