@@ -81,6 +81,7 @@ const game = {
   burstT: 0,
   rodSwing: 0,
   landedFx: null,
+  box: null,        // passo 4: box "pesce catturato" aperto a schermo (null = chiuso)
   lastRippleT: -1,
   duckT: 0,
   msg: '',
@@ -200,6 +201,7 @@ function landIt(){
     saveBest(game.best);
   }
   game.landedFx = { x: FISHER.x - 18, y: FISHER.y + 6, sp, t: 0 };
+  game.box = { sp, pts, t: 0 };   // passo 4: si apre al centro, il timer si congela
   addSplash(FISHER.x - 12, FISHER.y + 6, 10);
   game.phase = 'landed';
   game.fish.state = 'landed';
@@ -274,6 +276,7 @@ function restart(){
   game.fish = null;
   game.tension = 0;
   game.landedFx = null;
+  game.box = null;
   game.dist = 0;
   game.dist0 = 1;
   game.ang = 0;
@@ -299,14 +302,24 @@ function restart(){
 
 let pointerFresh = false;
 
+// Conversione tocco → mondo con la trasformazione inversa della camera:
+// lo schermo mostra una finestra di VIEW.w/cam.z × VIEW.h/cam.z centrata su cam.
 function pointerToWorld(e){
   const r = canvas.getBoundingClientRect();
   if (r.width <= 0 || r.height <= 0) return;
-  const x = (e.clientX - r.left) * (VIEW.w / r.width);
-  const y = (e.clientY - r.top) * (VIEW.h / r.height);
+  const u = (e.clientX - r.left) / r.width;
+  const v = (e.clientY - r.top) / r.height;
+  const x = cam.cx + (u - 0.5) * VIEW.w / cam.z;
+  const y = cam.cy + (v - 0.5) * VIEW.h / cam.z;
   if (!Number.isFinite(x) || !Number.isFinite(y)) return;
-  game.pointer.x = x;
-  game.pointer.y = y;
+  // il limite è la finestra che la camera mostra (cam.cx ± hw), non il mondo: la pubblicata non
+  // limitava affatto il puntatore (game.pointer.x = x diretto), quindi con lo zoom si poteva
+  // mirare fuori da quanto si vede; con la finestra mostrata il puntatore resta dove lo guardi
+  const hw = VIEW.w / (2 * cam.z), hh = VIEW.h / (2 * cam.z);
+  const x0 = Math.max(0, cam.cx - hw), x1 = Math.min(VIEW.w, cam.cx + hw);
+  const y0 = Math.max(0, cam.cy - hh), y1 = Math.min(VIEW.h, cam.cy + hh);
+  game.pointer.x = Math.min(x1, Math.max(x0, x));
+  game.pointer.y = Math.min(y1, Math.max(y0, y));
   pointerFresh = true;
 }
 
@@ -323,6 +336,8 @@ function randomLakePoint(){
 function press(key, randomTarget){
   if (audioOn){ getCtx(); startMusic(); }
   if (game.phase === 'over') { restart(); return; }
+  // passo 4: il primo tap/spazio chiude il box della cattura e NON lancia
+  if (game.box){ game.box = null; return; }
   if (game.phase === 'idle') {
     const t = pointerFresh && !randomTarget ? game.pointer : randomLakePoint();
     castTo(t.x, t.y);

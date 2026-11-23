@@ -53,67 +53,89 @@ function pxD(c, x, y, w, h, col){
   c.fillRect(x, y, w, h);
 }
 
+// I helper "smooth" disegnano in pixel device: PS è la scala corrente
+// (SC*zoom + offset della camera nei disegni diretti, livello di bake
+// nei disegni su canvas cotti). Con PS.s = SC e PS.ox/oy = 0 sono identici
+// alla versione senza camera.
 function smoothEllipse(c, cx, cy, rx, ry, col){
-  const x = cx * SC, y = cy * SC, ex = rx * SC, ey = Math.max(1, ry * SC);
+  const x = cx * PS.s, y = cy * PS.s, ex = rx * PS.s, ey = Math.max(1, ry * PS.s);
   const rows = Math.round(ey);
   for (let dy = -rows; dy <= rows; dy++){
     const t = dy / ey;
     if (t < -1 || t > 1) continue;
     const hw = ex * Math.sqrt(1 - t * t);
-    const x0 = Math.round(x - hw), x1 = Math.round(x + hw);
-    pxD(c, x0, Math.round(y) + dy, Math.max(1, x1 - x0 + 1), 1, col);
+    const x0 = Math.round(x - hw + PS.ox), x1 = Math.round(x + hw + PS.ox);
+    pxD(c, x0, Math.round(y + PS.oy) + dy, Math.max(1, x1 - x0 + 1), 1, col);
   }
 }
 
 function smoothRing(c, cx, cy, rx, ry, col, thick){
-  const steps = Math.max(32, Math.round(rx * SC * 4));
+  const steps = Math.max(32, Math.round(rx * PS.s * 4));
   const t = thick || 1;
   for (let s = 0; s < steps; s++){
     const a = (s / steps) * Math.PI * 2;
-    pxD(c, Math.round(cx * SC + Math.cos(a) * rx * SC), Math.round(cy * SC + Math.sin(a) * ry * SC), t, t, col);
+    pxD(c, Math.round(cx * PS.s + Math.cos(a) * rx * PS.s + PS.ox), Math.round(cy * PS.s + Math.sin(a) * ry * PS.s + PS.oy), t, t, col);
   }
 }
 
 function lineSS(){
-  return LOW_POWER ? 1 : SC;
+  return LOW_POWER ? 1 : PS.s;
 }
 
 function smoothLine(c, x0, y0, x1, y1, col, thick){
   const ss = lineSS();
   const dx = (x1 - x0) * ss, dy = (y1 - y0) * ss;
   const n = Math.max(Math.abs(dx), Math.abs(dy), 1);
-  const t = Math.max(1, Math.round((thick || 1) * SC));
+  const t = Math.max(1, Math.round((thick || 1) * PS.s));
   for (let i = 0; i <= n; i++){
-    pxD(c, Math.round(x0 * SC + dx * (i / n)), Math.round(y0 * SC + dy * (i / n)), t, t, col);
+    pxD(c, Math.round(x0 * PS.s + dx * (i / n) + PS.ox), Math.round(y0 * PS.s + dy * (i / n) + PS.oy), t, t, col);
   }
 }
 
 function smoothBezier(c, x0, y0, cx, cy, x1, y1, col, thick){
   const ss = lineSS();
   const n = Math.max(28, Math.round(Math.hypot(x1 - x0, y1 - y0) * ss * 1.1));
-  const t = Math.max(1, Math.round((thick || 1) * SC));
+  const t = Math.max(1, Math.round((thick || 1) * PS.s));
   for (let i = 0; i <= n; i++){
     const p = i / n;
     const a = (1 - p) * (1 - p), b = 2 * p * (1 - p), d = p * p;
-    pxD(c, Math.round(a * x0 * SC + b * cx * SC + d * x1 * SC), Math.round(a * y0 * SC + b * cy * SC + d * y1 * SC), t, t, col);
+    pxD(c, Math.round(a * x0 * PS.s + b * cx * PS.s + d * x1 * PS.s + PS.ox), Math.round(a * y0 * PS.s + b * cy * PS.s + d * y1 * PS.s + PS.oy), t, t, col);
   }
 }
 
 function deviceDraw(c, paint){
   if (!c.setTransform){ paint(c); return; }
+  const s0 = PS.s, ox0 = PS.ox, oy0 = PS.oy;
   c.save();
   c.setTransform(1, 0, 0, 1, 0, 0);
+  psCam();
   paint(c);
   c.restore();
+  PS.s = s0; PS.ox = ox0; PS.oy = oy0;
 }
 
 function bakeHi(key, w, h, paint){
-  const k = key + '@' + SC;
+  const lv = bakeLevel;
+  const k = key + '@' + lv;
   if (!bakeCache.has(k)){
-    const c = bakeCanvas(Math.round(w * SC), Math.round(h * SC));
+    const bw = Math.max(1, Math.round(w * lv)), bh = Math.max(1, Math.round(h * lv));
+    // il fondo è il pezzo grosso (a livello 4 sono ~33MB): si tiene solo l'ultimo
+    // livello cotto, altrimenti i livelli attraversati dallo zoom si accumulano
+    if (k.startsWith('bg@')){
+      for (const old of [...bakeCache.keys()]){
+        if (old !== k && old.startsWith('bg@')){ bakeBytes -= bakeCache.get(old).bytes || 0; bakeCache.delete(old); }
+      }
+    }
+    if (bakeBytes + bw * bh * 4 > BAKE_BUDGET){ bakeCache.clear(); bakeBytes = 0; }
+    const c = bakeCanvas(bw, bh);
+    const s0 = PS.s, ox0 = PS.ox, oy0 = PS.oy;
+    psBake(lv);
     paint(c.getContext('2d'), c);
+    PS.s = s0; PS.ox = ox0; PS.oy = oy0;
     c.lw = w;
     c.lh = h;
+    c.bytes = bw * bh * 4;
+    bakeBytes += bw * bh * 4;
     bakeCache.set(k, c);
   }
   return bakeCache.get(k);
@@ -241,9 +263,9 @@ function ringCanvas(col, rx){
 function smoothFishBody(c, x, y, rx, ry, dir, col, alpha){
   c.globalAlpha = alpha;
   smoothEllipse(c, x, y, rx, ry, col);
-  pxD(c, Math.round((x - dir * rx) * SC), Math.round((y - ry * 0.9) * SC), Math.max(SC, Math.round(rx * 0.5 * SC)), Math.max(SC, Math.round(ry * 1.8 * SC)), col);
-  pxD(c, Math.round((x + dir * rx * 0.45) * SC), Math.round((y - ry * 1.35) * SC), Math.max(SC, Math.round(rx * 0.5 * SC)), Math.max(SC, Math.round(ry * 0.7 * SC)), col);
-  pxD(c, Math.round((x + dir * rx * 0.2) * SC), Math.round((y + ry * 1.2) * SC), Math.max(SC, Math.round(rx * 0.3 * SC)), Math.max(SC, Math.round(ry * 0.5 * SC)), col);
+  pxD(c, toDevX(x - dir * rx), toDevY(y - ry * 0.9), Math.max(PS.s, Math.round(rx * 0.5 * PS.s)), Math.max(PS.s, Math.round(ry * 1.8 * PS.s)), col);
+  pxD(c, toDevX(x + dir * rx * 0.45), toDevY(y - ry * 1.35), Math.max(PS.s, Math.round(rx * 0.5 * PS.s)), Math.max(PS.s, Math.round(ry * 0.7 * PS.s)), col);
+  pxD(c, toDevX(x + dir * rx * 0.2), toDevY(y + ry * 1.2), Math.max(PS.s, Math.round(rx * 0.3 * PS.s)), Math.max(PS.s, Math.round(ry * 0.5 * PS.s)), col);
   c.globalAlpha = 1;
 }
 
@@ -285,7 +307,7 @@ function bobCanvas(){
   return bakeHi('bob', 8, 12, g => {
     smoothEllipse(g, 4, 3.4, 3.4, 2.6, PAL.bobWhite);
     smoothEllipse(g, 4, 7.6, 3.4, 2.8, PAL.bobRed);
-    pxD(g, Math.round(2.6 * SC), Math.round(1.4 * SC), Math.round(2 * SC), Math.max(1, Math.round(SC * 0.7)), PAL.sparkle);
+    pxD(g, toDevX(2.6), toDevY(1.4), Math.round(2 * PS.s), Math.max(1, Math.round(PS.s * 0.7)), PAL.sparkle);
   });
 }
 
@@ -298,8 +320,8 @@ function smoothTree(c, x, baseY, size){
   smoothEllipse(c, x, cy + s * 0.08, s * 0.58, s * 0.30, PAL.treeMid);
   smoothEllipse(c, x - s * 0.18, cy - s * 0.10, s * 0.42, s * 0.26, PAL.treeLite);
   smoothEllipse(c, x - s * 0.26, cy - s * 0.22, s * 0.28, s * 0.18, PAL.treeHi);
-  pxD(c, Math.round((x - s * 0.10) * SC), Math.round((cy - s * 0.34) * SC), Math.max(SC, Math.round(s * 0.22 * SC)), Math.max(1, Math.round(SC)), PAL.treeHi);
-  pxD(c, Math.round((x + s * 0.30) * SC), Math.round((cy + s * 0.14) * SC), Math.max(SC, Math.round(s * 0.16 * SC)), Math.max(1, Math.round(SC * 2)), PAL.treeDark);
+  pxD(c, toDevX(x - s * 0.10), toDevY(cy - s * 0.34), Math.max(PS.s, Math.round(s * 0.22 * PS.s)), Math.max(1, Math.round(PS.s)), PAL.treeHi);
+  pxD(c, toDevX(x + s * 0.30), toDevY(cy + s * 0.14), Math.max(PS.s, Math.round(s * 0.16 * PS.s)), Math.max(1, Math.round(PS.s * 2)), PAL.treeDark);
 }
 
 function smoothCloud(c, x, y, s){
@@ -308,7 +330,7 @@ function smoothCloud(c, x, y, s){
   smoothEllipse(c, x - s * 0.6, y + 2, s * 0.8, s * 0.42, '#ffffff');
   smoothEllipse(c, x + s * 0.7, y + 4, s * 0.9, s * 0.45, PAL.skyHz);
   smoothEllipse(c, x - s * 0.2, y - s * 0.35, s * 0.6, s * 0.35, '#ffffff');
-  pxD(c, Math.round((x - s * 0.5) * SC), Math.round((y + s * 0.5) * SC), Math.round(s * 1.4 * SC), Math.max(1, Math.round(SC)), mix(PAL.skyHz, PAL.skyLow, 0.6));
+  pxD(c, toDevX(x - s * 0.5), toDevY(y + s * 0.5), Math.round(s * 1.4 * PS.s), Math.max(1, Math.round(PS.s)), mix(PAL.skyHz, PAL.skyLow, 0.6));
 }
 
 function treeCanvas(size){

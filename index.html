@@ -50,6 +50,14 @@
       </div>
     </div>
 
+    <!-- passo 4: box della cattura, al centro; pointer-events: none, il tap passa al canvas -->
+    <div class="catchbox" id="catchbox" aria-hidden="true">
+      <canvas id="catchart"></canvas>
+      <div class="catch-name" id="catchname"></div>
+      <div class="catch-pts" id="catchpts"></div>
+      <div class="catch-note" id="catchnote"></div>
+    </div>
+
     <div class="bite-cue" id="bitecue">abbocca! tap</div>
     <div class="rotate">ruota il telefono in orizzontale</div>
     <button id="fs" class="fs" type="button">schermo intero</button>
@@ -63,5 +71,6 @@
 <script src="src/audio.js"></script>
 <script src="src/game.js"></script>
 <script src="src/render.js"></script>
+<script src="src/catchbox.js"></script>
 </body>
 </html>

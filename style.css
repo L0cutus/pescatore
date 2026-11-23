@@ -198,6 +198,42 @@ canvas{
   from{transform:translate(-50%,-50%) scale(.94)}
   to{transform:translate(-50%,-50%) scale(1.08)}
 }
+/* passo 4: box della cattura. pointer-events:none: il tap arriva al canvas e press() chiude */
+.catchbox{
+  position:absolute;
+  left:50%;
+  top:50%;
+  transform:translate(-50%,-50%);
+  pointer-events:none;
+  display:none;
+  flex-direction:column;
+  align-items:center;
+  gap:6px;
+  padding:10px 16px;
+  max-width:min(70%, 320px);
+  background:rgba(7,20,32,.82);
+  border:1px solid var(--gold);
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.06), 0 6px 18px rgba(4,14,22,.5);
+}
+.catchbox.on{display:flex;animation:boxPop .16s steps(3,end)}
+@keyframes boxPop{
+  from{transform:translate(-50%,-50%) scale(.88)}
+  to{transform:translate(-50%,-50%) scale(1)}
+}
+.catchbox canvas{width:184px;height:110px;background:transparent;cursor:default;border:1px solid var(--edge)}
+.catch-name{color:var(--gold);font-size:16px;font-weight:600}
+.catch-pts{color:var(--ink);font-size:13px}
+.catch-note{color:var(--dim);font-size:11px;text-align:center}
+@media (pointer:coarse){
+  .catchbox canvas{width:148px;height:88px}
+  .catch-name{font-size:15px}
+  .catch-pts{font-size:12px}
+  .catch-note{font-size:11px}
+}
+@media (orientation:portrait){
+  /* in verticale c'e' gia' l'invito a ruotare: il box non finisce sopra ai pulsanti */
+  .catchbox, .catchbox.on{display:none}
+}
 @media (pointer:fine){
   .mbtn,.fs{backdrop-filter:blur(7px) saturate(1.15);-webkit-backdrop-filter:blur(7px) saturate(1.15)}
 }

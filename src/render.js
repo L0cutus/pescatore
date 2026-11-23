@@ -58,7 +58,14 @@ function updateAmbient(dt){
 function update(dt){
   game.t += dt;
 
-  if (game.phase !== 'over'){
+  // passo 4: il box della cattura si chiude da solo dopo ~2.5 s (il primo tap lo chiude in press())
+  if (game.box){
+    game.box.t += dt;
+    if (game.box.t > 2.5) game.box = null;
+  }
+
+  // con il box aperto il tempo della giornata e' congelato, riparte dallo stesso valore
+  if (game.phase !== 'over' && !game.box){
     game.left -= dt;
     if (game.left <= 0){
       game.left = 0;
@@ -232,23 +239,23 @@ function syncHud(){
 }
 
 function drawSurface(){
-  const h = Math.max(1, Math.round(SC));
+  const h = Math.max(1, Math.round(PS.s));
   deviceDraw(ctx, g => {
     for (const d of dyn.dashes){
       const blink = Math.sin(game.t * 1.5 + d.phase);
       g.globalAlpha = 0.22 + 0.22 * Math.max(0, blink);
-      pxD(g, Math.round(d.x * SC), Math.round(d.y * SC), Math.round(d.len * SC), h, PAL.shimmer);
+      pxD(g, toDevX(d.x), toDevY(d.y), Math.round(d.len * PS.s), h, PAL.shimmer);
     }
     for (const s of dyn.sparkles){
       const blink = Math.sin(s.phase);
       if (blink < 0.2) continue;
       g.globalAlpha = 0.35 + 0.45 * blink;
-      pxD(g, Math.round(s.x * SC), Math.round(s.y * SC), Math.round(s.len * SC), h, PAL.sparkle);
+      pxD(g, toDevX(s.x), toDevY(s.y), Math.round(s.len * PS.s), h, PAL.sparkle);
     }
     for (const fd of dyn.foam){
       const blink = Math.sin(game.t * 2.4 + fd.phase);
       g.globalAlpha = 0.3 + 0.4 * Math.max(0, blink);
-      pxD(g, Math.round(fd.x * SC), Math.round(fd.y * SC), Math.round(fd.len * SC), h, PAL.foam);
+      pxD(g, toDevX(fd.x), toDevY(fd.y), Math.round(fd.len * PS.s), h, PAL.foam);
     }
   });
   ctx.globalAlpha = 1;
@@ -290,11 +297,11 @@ function drawRipples(){
 }
 
 function drawSplashes(){
-  const s = Math.max(2, Math.round(SC));
+  const s = Math.max(2, Math.round(PS.s));
   deviceDraw(ctx, g => {
     for (const sp of splashes){
       g.globalAlpha = Math.max(0, 1 - sp.t / sp.life);
-      pxD(g, Math.round(sp.x * SC), Math.round(sp.y * SC), s, s, PAL.foam);
+      pxD(g, toDevX(sp.x), toDevY(sp.y), s, s, PAL.foam);
     }
   });
   ctx.globalAlpha = 1;
@@ -314,11 +321,57 @@ function drawFishing(){
     const by = game.bob.y + game.bob.dip;
     const dx = bx - tip.x;
     const dy = by - tip.y;
-    const sag = (game.phase === 'reel' ? 8 - (game.tension / 100) * 8 : 20) + Math.hypot(dx, dy) * 0.05;
+    // Passo 3: la lenza dentro la scena dice la tensione. tt 0 = colori della pubblicata
+    // (mix a t=0 dà lo stesso rgb dell'hex), sopra ~0.7 la lenza vibra sulle curve.
+    const tt = game.phase === 'reel' ? game.tension / 100 : 0;
+    const sag = (game.phase === 'reel' ? 8 - tt * 8 : 20) + Math.hypot(dx, dy) * 0.05;
+    const wob = tt > 0.7 ? Math.sin(game.t * 26) * (tt - 0.7) * 10 : 0;
+    const colDark = tt > 0 ? mix(PAL.lineDark, PAL.bobRed, tt) : PAL.lineDark;
+    const colLine = tt > 0 ? mix(PAL.line, PAL.bobRed, tt) : PAL.line;
     deviceDraw(ctx, g => {
-      smoothBezier(g, tip.x, tip.y, tip.x + dx / 2, tip.y + dy / 2 + sag, bx, by, PAL.lineDark, 1);
-      smoothBezier(g, tip.x, tip.y - 2, tip.x + dx / 2, tip.y + dy / 2 + sag - 2, bx, by - 2, PAL.line, 1);
+      smoothBezier(g, tip.x, tip.y, tip.x + dx / 2, tip.y + dy / 2 + sag + wob, bx, by, colDark, 1);
+      smoothBezier(g, tip.x, tip.y - 2, tip.x + dx / 2, tip.y + dy / 2 + sag - 2 + wob, bx, by - 2, colLine, 1);
     });
+    // piccolo indicatore ad arco sopra il pesce: 12 pixel lungo l'arco, riempiti per tensione
+    if (game.phase === 'reel'){
+      const cx = Math.round(game.bob.x);
+      const cy = Math.round(game.bob.y + game.bob.dip) - 18;
+      const n = 12;
+      const filled = Math.round(tt * n);
+      const hot = game.tension > 70 ? PAL.bobRed : game.tension > 45 ? PAL.hudGold : '#3f8ea8';
+      deviceDraw(ctx, g => {
+        g.globalAlpha = 0.45;
+        for (let i = filled; i < n; i++){
+          const u = i / (n - 1);
+          pxD(g, toDevX(cx + (u * 2 - 1) * 9), toDevY(cy - Math.sin(u * Math.PI) * 5), Math.max(1, Math.round(PS.s)), Math.max(1, Math.round(PS.s)), PAL.hudDim);
+        }
+        g.globalAlpha = 1;
+        for (let i = 0; i < filled; i++){
+          const u = i / (n - 1);
+          pxD(g, toDevX(cx + (u * 2 - 1) * 9), toDevY(cy - Math.sin(u * Math.PI) * 5), Math.max(1, Math.round(PS.s)), Math.max(1, Math.round(PS.s)), hot);
+        }
+      });
+    }
+    // barra della tensione sotto il pesce abboccato: si legge senza distogliere lo sguardo
+    // (la barra HTML #tensionbar in alto a sinistra resta; questa segue game.bob)
+    if (game.phase === 'reel' || game.phase === 'bite'){
+      const bw = 26, bh = 4;
+      const cx = Math.max(bw / 2, Math.min(VIEW.w - bw / 2, game.bob.x));
+      const cy = Math.min(VIEW.h - 10, game.bob.y + game.bob.dip + 11);
+      const x0 = toDevX(cx - bw / 2), y0 = toDevY(cy);
+      const w0 = Math.max(2, Math.round(bw * PS.s)), h0 = Math.max(2, Math.round(bh * PS.s));
+      const hot = game.tension > 70 ? PAL.bobRed : game.tension > 45 ? PAL.hudGold : '#3f8ea8';
+      deviceDraw(ctx, g => {
+        pxD(g, x0 - 1, y0 - 1, w0 + 2, h0 + 2, 'rgba(7,20,32,0.62)');
+        g.globalAlpha = 0.45;
+        pxD(g, x0, y0, w0, h0, PAL.hudDim);
+        g.globalAlpha = 1;
+        const fw = Math.round(tt * w0);
+        if (fw > 0) pxD(g, x0, y0, fw, h0, hot);
+        // tacca rossa a 70: sopra la lenza vibra e si rompe
+        pxD(g, Math.round(x0 + w0 * 0.7), y0 - 1, Math.max(1, Math.round(PS.s)), h0 + 2, PAL.bobRed);
+      });
+    }
   }
 
   blitShadow(ctx, FISHER.x, FISHER.y + 2, 12, 4, PAL.shadowSoft);
@@ -369,8 +422,20 @@ function drawFlies(){
   }
 }
 
+// Il fondo statico è "cotto" al livello di densità corrente (solo l'ultimo livello
+// resta in cache: vedi bakeHi) e blittato con la camera. Il livello è scelto così che
+// SC*zoom cada su un livello fisso, quindi allo zoom fermo il blit è 1:1 e non ci sono
+// righe di pixel di spessore diverso; il tetto di memoria si applica lo stesso.
+function bgBaked(){
+  const lv = bakeLevel;
+  return bakeHi('bg', VIEW.w, VIEW.h, g => {
+    g.drawImage(bg, 0, 0, Math.round(VIEW.w * lv), Math.round(VIEW.h * lv));
+  });
+}
+
 function render(){
-  ctx.drawImage(bg, 0, 0);
+  applyCam();
+  blitHi(ctx, bgBaked(), 0, 0);
 
   for (const tr of dyn.trees){
     const sway = Math.sin(game.t * 0.9 + tr.phase) * (tr.size * 0.06);
@@ -427,9 +492,11 @@ say('giornata estiva: tap o spazio per lanciare');
 
 let last = performance.now();
 function frame(now){
-  const dt = Math.min(0.05, (now - last) / 1000);
+  // il delta non può essere negativo (timestamp anomali): la camera interpolerebbe impazzendo
+  const dt = Math.max(0, Math.min(0.05, (now - last) / 1000));
   last = now;
   update(dt);
+  updateCamera(dt);
   render();
   requestAnimationFrame(frame);
 }
